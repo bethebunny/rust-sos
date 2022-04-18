@@ -1,0 +1,52 @@
+[package]
+name = "sos"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.dev]
+# Disabled, see https://github.com/rust-lang/cargo/issues/7359
+# panic = "abort"
+
+[profile.release]
+# Disabled, see https://github.com/rust-lang/cargo/issues/7359
+# panic = "abort"
+
+[dependencies]
+bootloader = "0.9.8"
+spin = "0.9.3"
+bitflags = "1.3.2"
+
+[dependencies.lazy_static]
+version = "1.0"
+features = ["spin_no_std"]
+
+
+# bootimage config
+
+[package.metadata.bootimage]
+# The command invoked with the created bootimage (the "{}" will be replaced
+# with the path to the bootable disk image)
+# Applies to `bootimage run` and `bootimage runner`
+# TODO: this is hyper-specific to my WSL env
+run-command = ["./qemu.sh", "{}"]
+
+# Arguments added for `cargo test`
+test-args = [
+    # isa-debug-exit enables a qemu escape hatch for triggering an exit from the host OS
+    #  - writing a value to iobase port will cause qemu to exit with that value as an exit status (value << 1 | 1)
+    #  - iobase port: 0xf4  -- not a commonly used port: https://wiki.osdev.org/I/O_Ports#The_list
+    #  - iosize port: 0x04  -- port size is 4 bytes
+    "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
+    # output serial data to stdio
+    #  - serial port 0x3F8
+    "-serial", "stdio",
+    # Don't open a VGA display for running cargo test
+    "-display", "none"
+]
+test-success-exit-code = 33         # (0x10 << 1) | 1
+
+[[test]]
+name = "should_panic"
+harness = false
