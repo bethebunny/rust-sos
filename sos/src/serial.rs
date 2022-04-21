@@ -18,8 +18,12 @@ lazy_static! {
 #[macro_export]
 macro_rules! serial_print {
     ($($arg:tt)*) => ({
-        use core::fmt::Write;
-        $crate::serial::SERIAL1.lock().write_fmt(format_args!($($arg)*)).unwrap();
+        // Static lock, so avoid deadlocks where interrupt handlers try to aquire lock
+        // by disabling interrupts.
+        $crate::without_interrupt! {{
+            use core::fmt::Write;
+            $crate::serial::SERIAL1.lock().write_fmt(format_args!($($arg)*)).unwrap();
+        }};
     })
 }
 

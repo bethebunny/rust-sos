@@ -3,9 +3,11 @@ use core::arch::asm;
 use core::fmt;
 use core::ops::Index;
 
+use crate::pic8259;
+
 #[derive(Debug)]
 #[repr(C)]
-pub struct ExceptionStackFrame {
+pub struct InterruptStackFrame {
     instruction_pointer: u64,
     code_segment: u64,
     cpu_flags: u64,
@@ -36,14 +38,15 @@ impl EntryOptions {
         options.bits |= 0x7 << 9;
         options
     };
-    // pub fn switch_to_stack(&self) -> u8 {
-    //     self.bits.bits[0..3] as u8
-    // }
 
-    // pub fn set_switch_to_stack(&mut self, stack: u8) -> &mut Self {
-    //     self.bits.set_bits(0..3, stack);
-    //     self
-    // }
+    pub fn stack(&self) -> u8 {
+        (self.bits & 0x7) as u8
+    }
+
+    pub fn set_stack(&mut self, stack: u8) -> &mut Self {
+        self.bits = (self.bits ^ (self.bits & 0x7)) | stack as u16;
+        self
+    }
 }
 
 fn get_current_code_segment() -> u16 {
@@ -62,8 +65,8 @@ fn get_current_code_segment() -> u16 {
 // with a single function implementation; otherwise you need to explicitly cast the function
 // item to its function pointer type, which is ultimately more awkward.
 pub enum Handler {
-    Interrupt(extern "x86-interrupt" fn(frame: ExceptionStackFrame)),
-    Exception(extern "x86-interrupt" fn(frame: ExceptionStackFrame, error: u64)),
+    Interrupt(extern "x86-interrupt" fn(frame: InterruptStackFrame)),
+    Exception(extern "x86-interrupt" fn(frame: InterruptStackFrame, error: u64)),
 }
 
 #[derive(Clone, Copy)]
@@ -133,17 +136,22 @@ pub enum Interrupt {
     InvalidOpcode = 6,
     DeviceNotAvailable = 7,
     DoubleFault = 8,
-    InvalidTss = 9,
-    SegmentNotPresent = 10,
-    StackSegmentFault = 11,
-    GeneralProtectionFault = 12,
-    PageFault = 13,
-    X87FloatingPoint = 14,
-    AlignmentCheck = 15,
-    MachineCheck = 16,
-    SimdFloatingPoint = 17,
-    Virtualization = 18,
-    SecurityException = 19,
+    CoprocessorSegmentOverrun = 9,
+    InvalidTss = 10,
+    SegmentNotPresent = 11,
+    StackSegmentFault = 12,
+    GeneralProtectionFault = 13,
+    PageFault = 14,
+    X87FloatingPoint = 15,
+    AlignmentCheck = 16,
+    MachineCheck = 17,
+    SimdFloatingPoint = 18,
+    Virtualization = 19,
+    SecurityException = 20,
+
+    // Hardware interrupts
+    Timer = pic8259::PIC_INTERRUPT_OFFSET as isize,
+    Keyboard,
 }
 
 #[derive(Clone, Debug)]
@@ -151,10 +159,10 @@ pub enum Interrupt {
 #[repr(align(16))]
 pub struct InterruptTable([TableEntry; 256]);
 
-impl Index<usize> for InterruptTable {
+impl Index<Interrupt> for InterruptTable {
     type Output = TableEntry;
-    fn index(&self, index: usize) -> &TableEntry {
-        return &self.0[index];
+    fn index(&self, index: Interrupt) -> &TableEntry {
+        return &self.0[index as usize];
     }
 }
 
@@ -171,7 +179,7 @@ impl InterruptTable {
     pub fn load(&'static self) {
         use core::mem::size_of;
 
-        let pointer = InterruptTablePointer {
+        let pointer = TablePointer {
             table_limit: (size_of::<Self>() - 1) as u16,
             table_raw_pointer: self as *const _ as u64,
         };
@@ -183,7 +191,7 @@ impl InterruptTable {
 // packed is critical; without it this struct is aligned to 128 bytes
 // while the lidt instruction expects an 80 byte struct
 #[repr(C, packed)]
-struct InterruptTablePointer {
+pub struct TablePointer {
     table_limit: u16, // table size in bytes - 1
     table_raw_pointer: u64,
 }

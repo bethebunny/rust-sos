@@ -5,14 +5,23 @@
 #![reexport_test_harness_main = "test_main"]
 #![feature(abi_x86_interrupt)]
 
+pub mod global_descriptor_table;
 pub mod interrupt;
+pub mod keyboard;
+pub mod memory;
+pub mod pic8259;
 pub mod serial;
 pub mod vga_buffer;
 
 use core::panic::PanicInfo;
 
-pub fn init() {
+use bootloader::BootInfo;
+
+pub fn init(boot_info: &BootInfo) {
+    memory::init(boot_info.physical_memory_offset);
+    global_descriptor_table::init();
     interrupt::init();
+    pic8259::init();
 }
 
 const IOBASE_PORT: u16 = 0xF4;
@@ -65,9 +74,11 @@ fn panic(info: &PanicInfo) -> ! {
 }
 
 #[cfg(test)]
-#[no_mangle]
-pub extern "C" fn _start() -> ! {
-    init();
+bootloader::entry_point!(test_kernel_main);
+
+#[cfg(test)]
+fn test_kernel_main(boot_info: &'static bootloader::BootInfo) -> ! {
+    init(boot_info);
     test_main();
     loop {}
 }

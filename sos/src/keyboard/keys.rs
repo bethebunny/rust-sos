@@ -1,0 +1,21 @@
+#[derive(Debug, Clone, Copy)]
+pub enum Key {
+    NotBound,
+    CapsLock,
+    LeftControl,
+    RightControl,
+    LeftShift,
+    RightShift,
+    LeftOption,
+    RightOption,
+    LeftMeta,
+    RightMeta,
+    Backspace,
+    Escape,
+    Delete,
+    LeftArrow,
+    RightArrow,
+    UpArrow,
+    DownArrow,
+    Character(char, char),
+}

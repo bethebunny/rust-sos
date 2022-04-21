@@ -13,7 +13,14 @@ lazy_static! {
 
 #[macro_export]
 macro_rules! print {
-    ($($arg:tt)*) => ($crate::vga_buffer::_print(format_args!($($arg)*)));
+    ($($arg:tt)*) => {
+        // Static lock, so avoid deadlocks where interrupt handlers try to aquire lock
+        // by disabling interrupts.
+        $crate::without_interrupt! {{
+            use core::fmt::Write;
+            $crate::vga_buffer::WRITER.lock().write_fmt(format_args!($($arg)*)).unwrap();
+        }}
+    };
 }
 
 #[macro_export]
