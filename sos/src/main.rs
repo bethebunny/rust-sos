@@ -5,6 +5,9 @@
 #![reexport_test_harness_main = "test_main"]
 #![feature(abi_x86_interrupt)]
 
+extern crate alloc;
+
+use alloc::boxed::Box;
 use core::panic::PanicInfo;
 
 use bootloader::BootInfo;
@@ -92,6 +95,10 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let some_ptr: u64 = 0x400;
     let vol: *mut u64 = some_ptr as *const u64 as *mut u64;
     unsafe { *vol = 0x_f021_f077_f065_f04e };
+
+    let x = Box::new(42);
+    println!("x: {}", *x);
+    println!("&x: {:p}", x);
 
     // TODO: hmm .unwrap() causes something _like_ a panic but not an actual panic?
     // use core::arch::asm;

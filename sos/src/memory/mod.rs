@@ -1,18 +1,43 @@
 use bitflags::bitflags;
+use bootloader::BootInfo;
 use lazy_static::lazy_static;
 use spin::Mutex;
 
+pub mod allocator;
+pub mod frame_allocator;
 pub mod page_table;
 
 use page_table::Err;
+
+const PAGE_SIZE: usize = 4096;
 
 lazy_static! {
     static ref _PHYSICAL_MEMORY_OFFSET: Mutex<u64> = Mutex::new(0);
     static ref PHYSICAL_MEMORY_OFFSET: u64 = *_PHYSICAL_MEMORY_OFFSET.lock();
 }
 
-pub fn init(physical_memory_offset: u64) {
-    *_PHYSICAL_MEMORY_OFFSET.lock() = physical_memory_offset;
+pub fn init(boot_info: &'static BootInfo) {
+    // This is done exactly once, before anyone has accessed PHYSICAL_MEMORY_OFFSET,
+    // creating an immutable value we can set at runtime.
+    *_PHYSICAL_MEMORY_OFFSET.lock() = boot_info.physical_memory_offset;
+    // available_frames is a global bootstrap of physical memory pages.
+    // - On first iteration of frame_allocator::usable_frames, every frame is guaranteed to be unused
+    //   physical memory and safe to map to pages.
+    // - If it is ever used anywhere else it is unsafe, as any yielded frames may already or in the future
+    //   be mapped by the global frame allocator.
+    //   - Doing anything with these frames is already marked unsafe, and the function itself is
+    //     implemented in safe code, so it is "safe" despite these caveats.
+    // - Any frames yielded must either be semantically &'static, or be manually passed to
+    //   FRAME_ALLOCATOR.dealloc(frame) so that it may reuse them.
+    //   - I should eventually find a way to encode this in the type system
+    let mut available_frames = frame_allocator::usable_frames(&boot_info.memory_map);
+    unsafe {
+        allocator::init_kernel_heap(&mut || {
+            available_frames
+                .next()
+                .expect("Failed to allocate frame during kernel heap init")
+        });
+    };
 }
 
 bitflags! {

@@ -32,6 +32,15 @@ macro_rules! page_table {
                         Ok(unsafe { &*(crate::memory::physical_to_virtual(self.pointer()) as *mut $points_to) })
                     }
                 }
+
+                pub fn deref_mut_or_map(&mut self, next_frame: &mut dyn FnMut() -> u64) -> &mut $points_to {
+                    if !self.present() {
+                        // TODO: initialize frame to empty page table
+                        self.0 = next_frame() | 0x63; // TODO flags
+                        crate::println!("Mapped page {:#?}", self);
+                    }
+                    self.deref_mut()
+                }
             }
 
             // These are _undoubtedly_ a bad idea. Get rid of them ASAP, but playing around
@@ -127,6 +136,31 @@ impl l4::PageTable {
         let mut cr3: u64;
         asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack, preserves_flags));
         &mut *(crate::memory::physical_to_virtual(cr3 & !0xFFF) as *mut Self)
+    }
+
+    // TODO: bigger page sizes
+    // Unsafe because
+    // TODO: flags
+    pub unsafe fn map_if_unmapped(
+        &mut self,
+        address: u64,
+        next_frame: &mut dyn FnMut() -> u64,
+    ) -> Result<(), Err> {
+        let [l4_index, l3_index, l2_index, l1_index] = [
+            (address as usize >> (9 * 3) + 12) & 0x1FF,
+            (address as usize >> (9 * 2) + 12) & 0x1FF,
+            (address as usize >> (9 * 1) + 12) & 0x1FF,
+            (address as usize >> (9 * 0) + 12) & 0x1FF,
+        ];
+        // Whoops TODO map these to new page entries (how? where do they go in memory?)
+        // TODO: flags
+        // TODO: why does this work when .deref_or_map requires &mut self?
+        self[l4_index] // no wrap
+            .deref_mut_or_map(next_frame)[l3_index]
+            .deref_mut_or_map(next_frame)[l2_index]
+            .deref_mut_or_map(next_frame)[l1_index]
+            .deref_mut_or_map(next_frame);
+        Ok(())
     }
 }
 
