@@ -1,13 +1,21 @@
 #![no_std]
 #![cfg_attr(test, no_main)] // why can't we always just no_main?
+#![feature(allocator_api)]
 #![feature(alloc_error_handler)]
+#![feature(const_mut_refs)]
 #![feature(custom_test_frameworks)]
+#![feature(int_log)]
+#![feature(int_roundings)]
+#![feature(let_chains)]
+#![feature(inherent_associated_types)]
+#![feature(slice_ptr_get)]
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 #![feature(abi_x86_interrupt)]
 
 extern crate alloc;
 
+pub mod collections;
 pub mod global_descriptor_table;
 pub mod interrupt;
 pub mod keyboard;
@@ -25,14 +33,6 @@ pub fn init(boot_info: &'static BootInfo) {
     global_descriptor_table::init();
     interrupt::init();
     pic8259::init();
-}
-
-#[global_allocator]
-static ALLOCATOR: memory::allocator::Allocator = unsafe { memory::allocator::Allocator::new() };
-
-#[alloc_error_handler]
-fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
-    panic!("allocation error: {:?}", layout)
 }
 
 const IOBASE_PORT: u16 = 0xF4;

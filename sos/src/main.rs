@@ -100,6 +100,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     println!("x: {}", *x);
     println!("&x: {:p}", x);
 
+    // let slab_alloc = sos::memory::allocator::SlabAllocator::new(sos::ALLOCATOR);
+
     // TODO: hmm .unwrap() causes something _like_ a panic but not an actual panic?
     // use core::arch::asm;
     // unsafe { asm!("div ecx", in("edx") 0, in("eax") 42, in("ecx") 0) };
