@@ -1,22 +1,57 @@
 use alloc::alloc::Layout;
-use core::alloc::{AllocError, Allocator};
-use core::ptr::NonNull;
+use core::alloc::{AllocError, Allocator, GlobalAlloc};
+use core::ptr::{null_mut, NonNull};
 
 use spin::Mutex;
 
-// pub type MyAllocator = Locked<BumpAllocator>;
+pub struct Locked<T> {
+    pub value: Mutex<T>,
+}
 
-// impl MyAllocator {
-//     pub const unsafe fn new() -> Self {
-//         Locked {
-//             value: Mutex::new(BumpAllocator::new()),
-//         }
-//     }
-// }
+impl<T> Locked<T> {
+    pub const fn new(value: T) -> Self {
+        Locked {
+            value: Mutex::new(value),
+        }
+    }
+    pub fn lock(&self) -> spin::MutexGuard<T> {
+        self.value.lock()
+    }
+}
 
 pub unsafe trait MutAllocator {
     fn allocate(&mut self, layout: Layout) -> Result<NonNull<[u8]>, AllocError>;
     unsafe fn deallocate(&mut self, ptr: NonNull<u8>, layout: Layout);
+    fn as_sync(self) -> Locked<Self>
+    where
+        Self: Sized,
+    {
+        Locked {
+            value: Mutex::new(self),
+        }
+    }
+}
+
+unsafe impl<M: MutAllocator> Allocator for Locked<M> {
+    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        self.lock().allocate(layout)
+    }
+    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+        self.lock().deallocate(ptr, layout)
+    }
+}
+
+unsafe impl<M: MutAllocator> GlobalAlloc for Locked<M> {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        match self.lock().allocate(layout) {
+            Ok(ptr) => ptr.as_mut_ptr(),
+            Err(_) => null_mut(),
+        }
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        self.lock().deallocate(NonNull::new_unchecked(ptr), layout)
+    }
 }
 
 // Assumes that align is a power of 2
@@ -75,26 +110,5 @@ impl<A: Allocator + Clone> Clone for BootstrapAllocator<A> {
             allocated: None,
             allocator: self.allocator.clone(),
         }
-    }
-}
-
-// I don't really want to be defining this everywhere :/ I need to come up with
-// a better pattern for implementing Sync for allocators.
-pub struct Locked<T> {
-    value: Mutex<T>,
-}
-
-impl<T> Locked<T> {
-    pub fn lock(&self) -> spin::MutexGuard<T> {
-        self.value.lock()
-    }
-}
-
-unsafe impl<A: Allocator> Allocator for Locked<BootstrapAllocator<A>> {
-    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
-        self.lock().allocate(layout)
-    }
-    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-        self.lock().deallocate(ptr, layout)
     }
 }

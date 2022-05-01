@@ -1,9 +1,12 @@
 pub mod bootstrap_allocator;
 pub mod bump_allocator;
+pub mod fixed_size_allocator;
 pub mod page_allocator;
 pub mod resource_allocator;
 
-use bump_allocator::SyncBumpAllocator;
+use bump_allocator::BumpAllocator;
+
+use self::bootstrap_allocator::Locked;
 
 use super::page_table;
 use super::PAGE_SIZE;
@@ -12,8 +15,10 @@ const KERNEL_HEAP_START: usize = 0x4444_4444_0000;
 const KERNEL_HEAP_SIZE: usize = 100 * 1024;
 
 #[global_allocator]
-static ALLOCATOR: SyncBumpAllocator =
-    unsafe { SyncBumpAllocator::new(KERNEL_HEAP_START, KERNEL_HEAP_SIZE) };
+static ALLOCATOR: Locked<BumpAllocator> = {
+    let alloc = unsafe { BumpAllocator::new(KERNEL_HEAP_START, KERNEL_HEAP_SIZE) };
+    Locked::new(alloc)
+};
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {

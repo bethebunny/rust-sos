@@ -1,10 +1,17 @@
-struct StaticLinkedListNode {
-    next: Option<&'static mut StaticLinkedListNode>,
+use crate::{collections::DoublyLinkedList, memory::allocator::bootstrap_allocator::MutAllocator};
+use core::{
+    alloc::{AllocError, Allocator, Layout},
+    ops::Range,
+    ptr::{addr_of_mut, NonNull},
+};
+
+struct FreeSegment {
+    next: Option<&'static mut FreeSegment>,
 }
 
-impl StaticLinkedListNode {
+impl FreeSegment {
     pub const fn new() -> Self {
-        StaticLinkedListNode { next: None }
+        FreeSegment { next: None }
     }
 }
 
@@ -12,7 +19,7 @@ impl StaticLinkedListNode {
 // If S < 8 (aka word size in bytes) then it won't have space to contain
 // the linked list nodes that are used to track deallocated space.
 pub struct FixedSizeAllocatorBlock<const S: usize> {
-    head: Option<&'static mut StaticLinkedListNode>,
+    head: Option<&'static mut FreeSegment>,
     next_never_allocated: *mut [u8; S],
     block_end: *mut [u8; S],
     num_allocated: usize,
@@ -22,8 +29,8 @@ impl<const S: usize> FixedSizeAllocatorBlock<S> {
     // Safety: block must be a range of data (eg. a virtual page) that
     // is safe for the allocator to allocate to objects
     pub const unsafe fn new(block: Range<*mut u8>) -> Self {
-        debug_assert!(core::mem::size_of::<StaticLinkedListNode>() == 8);
-        debug_assert!(S >= core::mem::size_of::<StaticLinkedListNode>());
+        debug_assert!(core::mem::size_of::<FreeSegment>() == 8);
+        debug_assert!(S >= core::mem::size_of::<FreeSegment>());
         FixedSizeAllocatorBlock {
             head: None,
             next_never_allocated: block.start as *mut [u8; S],
@@ -42,7 +49,7 @@ impl<const S: usize> FixedSizeAllocatorBlock<S> {
 }
 
 unsafe impl<const S: usize> MutAllocator for FixedSizeAllocatorBlock<S> {
-    // We just punt on alignment :/ don't as for aligned data from this allocator
+    // We just punt on alignment :/ don't ask for aligned data from this allocator
     // (unless align <= layout.size() and both are multiples of 2!)
     fn allocate(&mut self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         debug_assert!(layout.size() <= S);
@@ -70,8 +77,8 @@ unsafe impl<const S: usize> MutAllocator for FixedSizeAllocatorBlock<S> {
 
     unsafe fn deallocate(&mut self, ptr: NonNull<u8>, _layout: Layout) {
         // We can be sure of alignment and size because we never allocate fewer than 64 bytes
-        let ptr = ptr.as_ptr() as *mut StaticLinkedListNode;
-        let mut node = StaticLinkedListNode::new();
+        let ptr = ptr.as_ptr() as *mut FreeSegment;
+        let mut node = FreeSegment::new();
         node.next = self.head.take();
         ptr.write(node);
         self.head = Some(&mut *ptr);
