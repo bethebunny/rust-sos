@@ -1,13 +1,14 @@
-use alloc::alloc::{Allocator, Global};
-use alloc::boxed::Box;
-use alloc::vec::Vec;
-use core::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
+// use alloc::alloc::{Allocator, Global};
+// use alloc::boxed::Box;
+// use alloc::vec::Vec;
+// use core::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
+use core::hash::{BuildHasherDefault, Hasher};
 
-const PERTURB_SHIFT: usize = 5;
-const FIRST_KEY_MASK: usize = 0x1F;
-const fn KEY_MASK(size: usize) -> usize {
-    size - 1
-}
+// const PERTURB_SHIFT: usize = 5;
+// const FIRST_KEY_MASK: usize = 0x1F;
+// const fn KEY_MASK(size: usize) -> usize {
+//     size - 1
+// }
 
 #[derive(Default)]
 pub struct SimpleHasher {

@@ -7,7 +7,6 @@
 #![feature(int_log)]
 #![feature(int_roundings)]
 #![feature(let_chains)]
-#![feature(inherent_associated_types)]
 #![feature(slice_ptr_get)]
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]

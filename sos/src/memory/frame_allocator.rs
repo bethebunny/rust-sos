@@ -9,10 +9,10 @@ use super::PAGE_SIZE;
 //
 // What if instead we bootstrap the kernel's heap with manually mapped pages, and then initialize
 // the heap allocator, and finally set up the page allocator?
-struct FrameAllocator {
-    memory_map: &'static MemoryMap,
-    iter: &'static mut dyn Iterator<Item = u64>,
-}
+// struct FrameAllocator {
+//     memory_map: &'static MemoryMap,
+//     iter: &'static mut dyn Iterator<Item = u64>,
+// }
 
 pub(in crate::memory) fn usable_frames(
     memory_map: &'static MemoryMap,

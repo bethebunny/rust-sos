@@ -1,9 +1,7 @@
 use alloc::alloc::{Allocator, Global};
-use alloc::format;
 use core::ops::Range;
 use core::ptr::NonNull;
 
-use hashbrown::hash_map::DefaultHashBuilder;
 use hashbrown::HashMap;
 
 use crate::collections::hash_map::SimpleBuildHasher;
@@ -75,7 +73,7 @@ impl<A: Allocator + Clone> SegmentPtr<A> {
 
 // Pick M to be floor(log2(max(value)))
 // - so for instance if you want to have 2^16 process IDs, choose 16
-struct ResourceAllocator<
+pub struct ResourceAllocator<
     const Q: usize = 1,
     A = Global,
     const M: usize = { 8 * core::mem::size_of::<usize>() },
@@ -217,13 +215,6 @@ impl<const Q: usize, const M: usize, A: Allocator + Clone> ResourceAllocator<Q, 
     fn coalesce_and_freelist_insert(&mut self, segment_ptr: &mut SegmentPtr<A>) {
         // assumption: segment_ptr is not allocated, but not in a freelist yet
 
-        // Otherwise not joinable; this should maybe be a more central concept.
-        // The paper keeps track of this so regions which are completely isolated
-        // can be freed upstream to a parent allocater, for instance.
-        let joinable = |a: &Segment<A>, b: &Segment<A>| {
-            a.freelist_ptr.is_some() && b.freelist_ptr.is_some() && a.range.end == b.range.start
-        };
-
         // If prev is joinable and unallocated
         //  - remove prev from its freelist
         //  - delete prev from segments
@@ -267,6 +258,11 @@ impl<const Q: usize, const M: usize, A: Allocator + Clone> ResourceAllocator<Q, 
     }
 }
 
+unsafe impl<const Q: usize, A: Allocator + Clone + Send, const M: usize> Send
+    for ResourceAllocator<Q, A, M>
+{
+}
+
 fn ceil_log2(u: usize) -> usize {
     debug_assert!(u != 0);
     (usize::BITS - (u - 1).leading_zeros()) as usize
@@ -284,7 +280,7 @@ mod test {
         use crate::collections::hash_map::SimpleBuildHasher;
         // page faults because ???
         // let hash_builder: hashbrown::hash_map::DefaultHashBuilder = Default::default();
-        let map: HashMap<usize, SegmentPtr<Global>, SimpleBuildHasher> =
+        let _: HashMap<usize, SegmentPtr<Global>, SimpleBuildHasher> =
             HashMap::with_hasher(Default::default());
     }
 

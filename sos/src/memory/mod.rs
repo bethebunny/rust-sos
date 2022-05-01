@@ -7,6 +7,7 @@ pub mod allocator;
 pub mod frame_allocator;
 pub mod page_table;
 
+use allocator::page_allocator::PageAllocator;
 use page_table::Err;
 
 const PAGE_SIZE: usize = 4096;
@@ -14,6 +15,10 @@ const PAGE_SIZE: usize = 4096;
 lazy_static! {
     static ref _PHYSICAL_MEMORY_OFFSET: Mutex<u64> = Mutex::new(0);
     static ref PHYSICAL_MEMORY_OFFSET: u64 = *_PHYSICAL_MEMORY_OFFSET.lock();
+}
+
+lazy_static! {
+    static ref PAGE_ALLOCATOR: Mutex<PageAllocator> = Mutex::new(PageAllocator::new());
 }
 
 pub fn init(boot_info: &'static BootInfo) {
@@ -31,12 +36,19 @@ pub fn init(boot_info: &'static BootInfo) {
     //   FRAME_ALLOCATOR.dealloc(frame) so that it may reuse them.
     //   - I should eventually find a way to encode this in the type system
     let mut available_frames = frame_allocator::usable_frames(&boot_info.memory_map);
+    let mut allocated_frames: usize = 0;
     unsafe {
         allocator::init_kernel_heap(&mut || {
+            allocated_frames += 1;
             available_frames
                 .next()
                 .expect("Failed to allocate frame during kernel heap init")
         });
+    };
+    // Now that the bootstrap allocator is initialized, we can start doing more complicated things!
+    // Let's initialize our arena-based page allocator.
+    unsafe {
+        (*PAGE_ALLOCATOR.lock()).init(&boot_info.memory_map, allocated_frames);
     };
 }
 
