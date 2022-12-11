@@ -1,13 +1,16 @@
 use core::ops::Range;
+use core::ptr::NonNull;
 
 use bootloader::bootinfo::MemoryMap;
 use bootloader::bootinfo::MemoryRegionType;
 
 use super::resource_allocator::ResourceAllocator;
 use crate::memory::page_table;
+use crate::memory::page_table::l4;
 use crate::memory::PAGE_SIZE;
 
 pub struct PageAllocator {
+    l4_table: &'static mut l4::PageTable,
     vmem: ResourceAllocator<PAGE_SIZE>,
     pmem: ResourceAllocator<PAGE_SIZE>,
 }
@@ -22,7 +25,12 @@ impl PageAllocator {
     pub fn new() -> Self {
         let vmem: ResourceAllocator<PAGE_SIZE> = ResourceAllocator::new();
         let pmem: ResourceAllocator<PAGE_SIZE> = ResourceAllocator::new();
-        PageAllocator { vmem, pmem }
+        let l4_table = unsafe { l4::PageTable::get() };
+        PageAllocator {
+            l4_table,
+            vmem,
+            pmem,
+        }
     }
 
     pub unsafe fn init(&mut self, memory_map: &MemoryMap, used_frames: usize) {
@@ -68,14 +76,53 @@ impl PageAllocator {
     // pub fn resize();
     // pub fn to_disk();
 
-    // pub fn allocate_frame(&mut self) -> Result<NonNull<[u8]>, ()> {
-    //     // self.allocate_frames(1)
-    //     let start = self.pmem.fast_allocate(1)?.start as *mut u8;
-    //     Ok(unsafe { NonNull::new_unchecked(start) })
-    // }
+    pub fn allocate_frame(&mut self) -> Result<NonNull<[u8]>, ()> {
+        // self.allocate_frames(1)
+        let start = self.pmem.fast_allocate(1)?.start as *mut u8;
+        Ok(unsafe { NonNull::new_unchecked(start as *mut [u8; PAGE_SIZE]) })
+    }
     // pub fn allocate_frames(&mut self, frames: usize) -> Result<NonNull<[u8]>, ()> {
     //     let start = self.pmem.fast_allocate(frames)?.start as *mut u8;
     //     Ok(unsafe { NonNull::new_unchecked(start) })
     // }
+    pub fn allocate(&mut self, size: usize) -> Result<NonNull<[u8]>, ()> {
+        let range = self.vmem.fast_allocate(size)?;
+        unsafe {
+            // TODO: propagate page allocation error
+            let next_frame =
+                &mut || self.pmem.fast_allocate(1).unwrap().start as *const () as usize;
+            for page in range.clone().step_by(PAGE_SIZE) {
+                self.l4_table
+                    .map_if_unmapped(page, next_frame)
+                    .or(Err(()))?;
+            }
+        };
+        // page_table::l4::PageTable::
+        Ok(unsafe {
+            NonNull::new_unchecked(core::ptr::slice_from_raw_parts_mut(
+                range.start as *mut u8,
+                range.end,
+            ))
+        })
+    }
+
+    // unsafe fn map_page(&mut self, page: usize) {
+    //     self.l4_table
+    //         .map_if_unmapped(page, &mut || self.next_frame().unwrap());
+    // }
+    // fn next_frame(&mut self) -> Result<usize, ()> {
+    //     Ok(self.allocate_frame()?.as_ptr() as *const () as usize)
+    // }
+
+    pub fn deallocate(&mut self, ptr: *mut u8, size: usize) {
+        let start = ptr as usize;
+        let range = start..start + size;
+        self.vmem.release(range.clone());
+        for page in range.step_by(PAGE_SIZE) {
+            let entry = unsafe { self.l4_table.unmap(page) };
+            let ptr = entry.pointer();
+            self.pmem.release(ptr..ptr + PAGE_SIZE);
+        }
+    }
     // pub fn allocate_frames();
 }

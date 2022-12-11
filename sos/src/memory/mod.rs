@@ -13,8 +13,8 @@ use page_table::Err;
 const PAGE_SIZE: usize = 4096;
 
 lazy_static! {
-    static ref _PHYSICAL_MEMORY_OFFSET: Mutex<u64> = Mutex::new(0);
-    static ref PHYSICAL_MEMORY_OFFSET: u64 = *_PHYSICAL_MEMORY_OFFSET.lock();
+    static ref _PHYSICAL_MEMORY_OFFSET: Mutex<usize> = Mutex::new(0);
+    static ref PHYSICAL_MEMORY_OFFSET: usize = *_PHYSICAL_MEMORY_OFFSET.lock();
 }
 
 lazy_static! {
@@ -24,7 +24,7 @@ lazy_static! {
 pub fn init(boot_info: &'static BootInfo) {
     // This is done exactly once, before anyone has accessed PHYSICAL_MEMORY_OFFSET,
     // creating an immutable value we can set at runtime.
-    *_PHYSICAL_MEMORY_OFFSET.lock() = boot_info.physical_memory_offset;
+    *_PHYSICAL_MEMORY_OFFSET.lock() = boot_info.physical_memory_offset as usize;
     // available_frames is a global bootstrap of physical memory pages.
     // - On first iteration of frame_allocator::usable_frames, every frame is guaranteed to be unused
     //   physical memory and safe to map to pages.
@@ -70,18 +70,18 @@ bitflags! {
 // Doesn't need to be unsafe because casting the pointer to anything
 // is already unsafe
 #[inline]
-fn physical_to_virtual(address: u64) -> u64 {
+fn physical_to_virtual(address: usize) -> usize {
     address + *PHYSICAL_MEMORY_OFFSET
 }
 
 // I actually really like the x86_64 VirtAddr/PhysAddr types, TODO to
 // refactor the whole kernel on top of similar ideas
-pub fn translate_virtual_address(address: u64) -> Result<u64, Err> {
+pub fn translate_virtual_address(address: usize) -> Result<usize, Err> {
     let [l4_index, l3_index, l2_index, l1_index] = [
-        (address as usize >> (9 * 3) + 12) & 0x1FF,
-        (address as usize >> (9 * 2) + 12) & 0x1FF,
-        (address as usize >> (9 * 1) + 12) & 0x1FF,
-        (address as usize >> (9 * 0) + 12) & 0x1FF,
+        (address >> (9 * 3) + 12) & 0x1FF,
+        (address >> (9 * 2) + 12) & 0x1FF,
+        (address >> (9 * 1) + 12) & 0x1FF,
+        (address >> (9 * 0) + 12) & 0x1FF,
     ];
     let l4_table = unsafe { page_table::l4::PageTable::get() };
     let l3_table = l4_table[l4_index].deref()?;

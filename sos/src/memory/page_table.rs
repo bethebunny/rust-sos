@@ -11,14 +11,23 @@ macro_rules! page_table {
 
             #[repr(align(4096))]
             pub struct PageTable([PageTableEntry; 512]);
+            #[derive(Clone)]
             pub struct PageTableEntry(u64);
 
             impl PageTableEntry {
-                pub fn new(data: u64) -> Self {
-                    PageTableEntry(data) // TODO: better API xD
+                pub fn new(data: usize) -> Self {
+                    PageTableEntry(data as u64) // TODO: better API xD
                 }
-                pub fn pointer(&self) -> u64 {
-                    self.0 & 0x000F_FFFF_FFFF_FF000
+                pub fn pointer(&self) -> usize {
+                    (self.0 & 0x000F_FFFF_FFFF_FF000) as usize
+                }
+
+                pub fn set_not_present(&mut self) {
+                    self.0 |= 0x1;
+                }
+
+                pub fn set_present(&mut self) {
+                    self.0 &= !0x1;
                 }
 
                 pub fn present(&self) -> bool {
@@ -33,10 +42,10 @@ macro_rules! page_table {
                     }
                 }
 
-                pub fn deref_mut_or_map(&mut self, next_frame: &mut dyn FnMut() -> u64) -> &mut $points_to {
+                pub fn deref_mut_or_map(&mut self, next_frame: &mut dyn FnMut() -> usize) -> &mut $points_to {
                     if !self.present() {
                         // TODO: initialize frame to empty page table
-                        self.0 = next_frame() | 0x63; // TODO flags
+                        self.0 = next_frame() as u64 | 0x63; // TODO flags
                         crate::println!("Mapped page {:#?}", self);
                     }
                     self.deref_mut()
@@ -133,7 +142,7 @@ page_table!(l4 -> l3::PageTable);
 
 impl l4::PageTable {
     pub unsafe fn get() -> &'static mut Self {
-        let mut cr3: u64;
+        let mut cr3: usize;
         asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack, preserves_flags));
         &mut *(crate::memory::physical_to_virtual(cr3 & !0xFFF) as *mut Self)
     }
@@ -143,14 +152,14 @@ impl l4::PageTable {
     // TODO: flags
     pub unsafe fn map_if_unmapped(
         &mut self,
-        address: u64,
-        next_frame: &mut dyn FnMut() -> u64,
+        address: usize,
+        next_frame: &mut dyn FnMut() -> usize,
     ) -> Result<(), Err> {
         let [l4_index, l3_index, l2_index, l1_index] = [
-            (address as usize >> (9 * 3) + 12) & 0x1FF,
-            (address as usize >> (9 * 2) + 12) & 0x1FF,
-            (address as usize >> (9 * 1) + 12) & 0x1FF,
-            (address as usize >> (9 * 0) + 12) & 0x1FF,
+            (address >> (9 * 3) + 12) & 0x1FF,
+            (address >> (9 * 2) + 12) & 0x1FF,
+            (address >> (9 * 1) + 12) & 0x1FF,
+            (address >> (9 * 0) + 12) & 0x1FF,
         ];
         // Whoops TODO map these to new page entries (how? where do they go in memory?)
         // TODO: flags
@@ -161,6 +170,18 @@ impl l4::PageTable {
             .deref_mut_or_map(next_frame)[l1_index]
             .deref_mut_or_map(next_frame);
         Ok(())
+    }
+
+    pub unsafe fn unmap(&mut self, address: usize) -> l1::PageTableEntry {
+        let [l4_index, l3_index, l2_index, l1_index] = [
+            (address >> (9 * 3) + 12) & 0x1FF,
+            (address >> (9 * 2) + 12) & 0x1FF,
+            (address >> (9 * 1) + 12) & 0x1FF,
+            (address >> (9 * 0) + 12) & 0x1FF,
+        ];
+        let entry = &mut self[l4_index][l3_index][l2_index][l1_index];
+        entry.set_not_present();
+        entry.clone() // return an Entry so that if it's dropped it will invlpg
     }
 }
 

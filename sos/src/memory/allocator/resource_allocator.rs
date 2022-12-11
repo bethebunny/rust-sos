@@ -119,6 +119,36 @@ impl<const Q: usize, const M: usize, A: Allocator + Clone> ResourceAllocator<Q, 
         }
     }
 
+    // Use this to tell the resource allocator that an external system allocated a region.
+    // Fundamentally unsafe because the resource allocator is the source-of-truth for allocation.
+    // Returns Ok() if that allocation is able to be reconciled, else Err().
+    // pub unsafe fn mark_allocated(&mut self, range: Range<usize>) -> Result<(), ()> {
+    //     let mut current = &mut self.segments.head;
+    //     let (mut start, end) = (range.start, range.end);
+    //     while let Some(ref mut node) = current {
+    //         current = &mut node.next;
+    //         let segment = &mut node.value;
+    //         if segment.range.contains(&start) {
+    //             let mut segment_ptr = SegmentPtr(node.as_ptr());
+    //             if segment.is_allocated() {
+    //                 return Err(());
+    //             }
+    //             if segment.range.start < start {
+    //                 // self.try_split_segment(segment_ptr, start - segment.start);
+    //                 self.try_split_segment(&mut segment_ptr, start - segment.range.start);
+    //                 continue;
+    //             }
+    //             if segment.range.end <= range.end {
+    //                 self.freelist_remove(segment);
+    //             }
+    //         } else if segment.range.start > range.end {
+    //             return Err(());
+    //         }
+    //         // TODO: draw the rest of the owl
+    //     }
+    //     Ok(())
+    // }
+
     // - Round size up with ceil_log2 to ensure that an allocated region .size >= size
     // - If best fast freelist is empty, check larger freelists
     // - If all larger freelists are empty, fall back to a linear scan of the next smaller freelist
@@ -137,7 +167,7 @@ impl<const Q: usize, const M: usize, A: Allocator + Clone> ResourceAllocator<Q, 
         }
         // Still haven't allocated
         // - back up to linear scan of freelist with appropriate size
-        let freelist_idx = qsize.log2() as usize;
+        let freelist_idx = qsize.ilog2() as usize;
         if freelist_idx < ceil_log2(qsize) {
             let freelist = &mut self.freelists[freelist_idx];
             let node = freelist
@@ -158,7 +188,7 @@ impl<const Q: usize, const M: usize, A: Allocator + Clone> ResourceAllocator<Q, 
         // size.log2() rounds down, which is exactly the criteria we want for adding to freelists;
         // each freelist should have ranges of size [2^i, 2^(i+1)) (except for the last which can
         // has no upper bound)
-        (qsize.log2() as usize).min(M)
+        (qsize.ilog2() as usize).min(M)
     }
 
     fn freelist_insert(&mut self, segment_ptr: &mut SegmentPtr<A>) {

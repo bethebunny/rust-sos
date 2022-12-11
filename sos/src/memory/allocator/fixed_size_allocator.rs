@@ -39,6 +39,16 @@ impl<const S: usize> FixedSizeAllocatorBlock<S> {
         }
     }
 
+    fn pop_never_allocated(&mut self) -> Result<*mut [u8; S], AllocError> {
+        if self.next_never_allocated < self.block_end {
+            let ptr = self.next_never_allocated;
+            self.next_never_allocated = unsafe { self.next_never_allocated.offset(1) };
+            Ok(ptr)
+        } else {
+            Err(AllocError)
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.num_allocated == 0
     }
@@ -54,34 +64,25 @@ unsafe impl<const S: usize> MutAllocator for FixedSizeAllocatorBlock<S> {
     fn allocate(&mut self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         debug_assert!(layout.size() <= S);
         debug_assert!(layout.align() <= layout.size());
-        match &mut self.head {
-            Some(ref mut head) => {
+        let ptr = match &mut self.head {
+            Some(head) => {
                 let ptr = addr_of_mut!(*head) as *mut [u8; S];
                 self.head = head.next.take();
-                self.num_allocated += 1;
-                unsafe { Ok(NonNull::new_unchecked(ptr)) }
+                ptr
             }
-            None => {
-                let next = unsafe { self.next_never_allocated.offset(1) };
-                if self.block_end >= self.next_never_allocated {
-                    let ptr = self.next_never_allocated;
-                    self.next_never_allocated = next;
-                    self.num_allocated += 1;
-                    unsafe { Ok(NonNull::new_unchecked(ptr)) }
-                } else {
-                    Err(AllocError)
-                }
-            }
-        }
+            None => self.pop_never_allocated()?,
+        };
+        self.num_allocated += 1;
+        Ok(unsafe { NonNull::new_unchecked(ptr) })
     }
 
     unsafe fn deallocate(&mut self, ptr: NonNull<u8>, _layout: Layout) {
-        // We can be sure of alignment and size because we never allocate fewer than 64 bytes
         let ptr = ptr.as_ptr() as *mut FreeSegment;
-        let mut node = FreeSegment::new();
-        node.next = self.head.take();
-        ptr.write(node);
+        ptr.write(FreeSegment {
+            next: self.head.take(),
+        });
         self.head = Some(&mut *ptr);
+        self.num_allocated -= 1;
     }
 }
 

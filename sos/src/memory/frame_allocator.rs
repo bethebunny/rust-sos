@@ -16,12 +16,12 @@ use super::PAGE_SIZE;
 
 pub(in crate::memory) fn usable_frames(
     memory_map: &'static MemoryMap,
-) -> impl Iterator<Item = u64> {
+) -> impl Iterator<Item = usize> {
     memory_map
         .iter()
         .filter(|r| r.region_type == MemoryRegionType::Usable)
         .flat_map(|r| (r.range.start_frame_number..r.range.end_frame_number))
-        .map(|frame_number| frame_number * PAGE_SIZE as u64)
+        .map(|frame_number| frame_number as usize * PAGE_SIZE)
 }
 
 // impl FrameAllocator {
