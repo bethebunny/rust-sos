@@ -4,6 +4,7 @@
 #![test_runner(sos::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 #![feature(abi_x86_interrupt)]
+#![feature(generic_arg_infer)]
 
 extern crate alloc;
 
@@ -61,7 +62,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     //     }
     // }
 
-    let some_addresses = [
+    let some_addresses: [usize; _] = [
         // the identity-mapped vga buffer page
         0xb8000,
         // some code page
@@ -71,7 +72,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         // virtual address mapped to physical address 0
         // - This currently does something nonsense and unsafe because we
         //   haven't implemented huge pages!
-        boot_info.physical_memory_offset,
+        boot_info.physical_memory_offset as usize,
         // should be a page fault
         0,
         0xdeadbeef,
